@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heikin-Ashi BTC/USDT Trader</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        :root {
+            --primary: #3b82f6;
+            --secondary: #10b981;
+            --dark: #0f172a;
+            --darker: #020617;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, var(--darker), var(--dark));
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        
+        .card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        }
+        
+        .signal-buy {
+            background: linear-gradient(135deg, #065f46, #047857);
+        }
+        
+        .signal-sell {
+            background: linear-gradient(135deg, #7f1d1d, #b91c1c);
+        }
+        
+        .signal-hold {
+            background: linear-gradient(135deg, #854d0e, #ca8a04);
+        }
+        
+        .candle-bullish {
+            background: linear-gradient(to bottom, #10b981, #059669);
+        }
+        
+        .candle-bearish {
+            background: linear-gradient(to bottom, #ef4444, #dc2626);
+        }
+        
+        .loading-spinner {
+            animation: spin 1.5s linear infinite;
+            border-top-color: var(--primary);
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        
+        .candle-chart {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 10px;
+        }
+        
+        .candle-row {
+            display: flex;
+            height: 40px;
+            margin-bottom: 5px;
+        }
+        
+        .candle-body {
+            width: 20px;
+            position: relative;
+        }
+        
+        .candle-wick {
+            width: 1px;
+            background-color: #cbd5e1;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <!-- Header -->
+    <header class="py-6 px-4 lg:px-8">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center">
+            <div class="flex items-center mb-4 md:mb-0">
+                <div class="bg-blue-500 p-3 rounded-xl mr-3">
+                    <i class="fas fa-coins text-white text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                        Heikin-Ashi BTC/USDT Trader
+                    </h1>
+                    <p class="text-blue-300">Live Trading Signals & Price Analysis</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div class="text-right">
+                    <div class="text-sm text-gray-400">Last update</div>
+                    <div class="text-lg font-mono" id="update-time">--:--:--</div>
+                </div>
+                <button id="refresh-btn" class="bg-slate-700 hover:bg-slate-600 p-3 rounded-full">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 py-8 px-4">
+        <div class="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left Column - Trading App -->
+            <div class="lg:col-span-2 space-y-8">
+                <!-- Price and Signal Card -->
+                <div class="card p-6">
+                    <div class="flex flex-col md:flex-row justify-between items-center mb-6">
+                        <div>
+                            <h2 class="text-xl font-bold text-gray-300">BTC/USDT</h2>
+                            <div class="flex items-center mt-1">
+                                <span class="text-3xl font-bold text-blue-400" id="current-price">$--,--</span>
+                                <span class="ml-3 px-2 py-1 bg-green-500/20 text-green-400 rounded-md hidden" id="price-change">
+                                    <i class="fas fa-caret-up mr-1"></i>0.00%
+                                </span>
+                            </div>
+                        </div>
+                        <div class="mt-4 md:mt-0">
+                            <div class="flex items-center">
+                                <span class="text-gray-400 mr-3">Signal confidence</span>
+                                <div class="w-24 bg-slate-700 rounded-full h-2.5">
+                                    <div class="bg-blue-600 h-2.5 rounded-full" id="confidence-bar" style="width: 0%"></div>
+                                </div>
+                                <span class="ml-2 font-bold" id="confidence-value">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="signal-hold rounded-xl p-6 mt-4" id="signal-card">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-lg font-bold flex items-center">
+                                    <i class="fas fa-pause-circle mr-2"></i>
+                                    <span id="signal-text">LOADING SIGNAL...</span>
+                                </h3>
+                                <p class="text-yellow-200 mt-1" id="signal-desc">Initializing trading analysis</p>
+                            </div>
+                            <div class="text-4xl">
+                                <i class="fas fa-chart-line text-yellow-300" id="signal-icon"></i>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                            <div class="text-center p-3 bg-slate-800/30 rounded-lg">
+                                <div class="text-gray-300">Strength</div>
+                                <div class="text-xl font-bold text-gray-300 mt-1" id="strength-value">--</div>
+                            </div>
+                            <div class="text-center p-3 bg-slate-800/30 rounded-lg">
+                                <div class="text-gray-300">Confidence</div>
+                                <div class="text-xl font-bold text-blue-400 mt-1" id="confidence-display">0%</div>
+                            </div>
+                            <div class="text-center p-3 bg-slate-800/30 rounded-lg">
+                                <div class="text-gray-300">Trend</div>
+                                <div class="text-xl font-bold text-gray-300 mt-1" id="trend-value">--</div>
+                            </div>
+                            <div class="text-center p-3 bg-slate-800/30 rounded-lg">
+                                <div class="text-gray-300">Duration</div>
+                                <div class="text-xl font-bold text-gray-300 mt-1">4h</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Charts -->
+                <div class="card p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-bold">Market Analysis</h2>
+                        <div class="flex space-x-1 bg-slate-700 p-1 rounded-lg">
+                            <button class="tab-btn px-3 py-1 rounded-md active">Price</button>
+                            <button class="tab-btn px-3 py-1 rounded-md">Volume</button>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <canvas id="price-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Column - Data and Candles -->
+            <div class="space-y-8">
+                <!-- Recent Data Table -->
+                <div class="card p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-bold">Recent Heikin-Ashi Data</h2>
+                        <div class="text-sm text-gray-400">4h candles</div>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="text-left text-gray-400 border-b border-slate-700">
+                                    <th class="pb-3">Time</th>
+                                    <th class="pb-3 text-right">HA Open</th>
+                                    <th class="pb-3 text-right">HA Close</th>
+                                    <th class="pb-3 text-center">Candle</th>
+                                    <th class="pb-3 text-center">Signal</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ha-table-body">
+                                <tr>
+                                    <td colspan="5" class="py-8 text-center">
+                                        <div class="flex justify-center">
+                                            <div class="loading-spinner h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+                                        </div>
+                                        <p class="mt-2 text-gray-400">Loading market data...</p>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Candle Visualization -->
+                <div class="card p-6">
+                    <h2 class="text-xl font-bold mb-6">Current Heikin-Ashi Candle</h2>
+                    
+                    <div class="flex flex-col items-center py-4">
+                        <div id="candle-visualization" class="my-4">
+                            <div class="flex justify-center">
+                                <div class="loading-spinner h-12 w-12 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+                            </div>
+                        </div>
+                        <div class="text-center mt-4">
+                            <h3 class="font-bold text-lg" id="candle-type">Loading...</h3>
+                            <p class="text-gray-400 mt-1" id="candle-desc">Analyzing current candle pattern</p>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6 p-4 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 rounded-lg">
+                        <h3 class="font-bold flex items-center">
+                            <i class="fas fa-lightbulb mr-2"></i>
+                            Trading Strategy
+                        </h3>
+                        <p class="text-gray-300 mt-2">
+                            Buy when consecutive bullish candles with no lower shadows appear. 
+                            Sell when bearish candles with no upper shadows form.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="py-8 px-4 border-t border-slate-700/50 mt-8">
+        <div class="max-w-6xl mx-auto">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div class="mb-4 md:mb-0">
+                    <div class="flex items-center">
+                        <div class="bg-blue-500 p-2 rounded-lg mr-3">
+                            <i class="fas fa-chart-line text-white"></i>
+                        </div>
+                        <h2 class="text-xl font-bold">Heikin-Ashi BTC/USDT Trader</h2>
+                    </div>
+                    <p class="text-gray-500 mt-2">Algorithmic trading signals powered by Heikin-Ashi candles</p>
+                </div>
+                <div class="flex space-x-4">
+                    <a href="https://github.com/your-repo" class="text-gray-400 hover:text-blue-400 text-xl">
+                        <i class="fab fa-github"></i>
+                    </a>
+                    <a href="#" class="text-gray-400 hover:text-blue-400 text-xl">
+                        <i class="fab fa-twitter"></i>
+                    </a>
+                </div>
+            </div>
+            <div class="mt-8 text-center text-gray-500 text-sm">
+                <p>This application provides real-time analysis using Binance API data</p>
+                <p class="mt-1">Data updates every 60 seconds. For educational purposes only.</p>
+                <p class="mt-2">© 2023 Heikin-Ashi BTC Trader. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // DOM Elements
+        const elements = {
+            currentPrice: document.getElementById('current-price'),
+            priceChange: document.getElementById('price-change'),
+            updateTime: document.getElementById('update-time'),
+            signalCard: document.getElementById('signal-card'),
+            signalText: document.getElementById('signal-text'),
+            signalDesc: document.getElementById('signal-desc'),
+            signalIcon: document.getElementById('signal-icon'),
+            strengthValue: document.getElementById('strength-value'),
+            confidenceValue: document.getElementById('confidence-value'),
+            confidenceDisplay: document.getElementById('confidence-display'),
+            confidenceBar: document.getElementById('confidence-bar'),
+            trendValue: document.getElementById('trend-value'),
+            haTableBody: document.getElementById('ha-table-body'),
+            candleVisualization: document.getElementById('candle-visualization'),
+            candleType: document.getElementById('candle-type'),
+            candleDesc: document.getElementById('candle-desc'),
+            refreshBtn: document.getElementById('refresh-btn')
+        };
+
+        // Chart initialization
+        const priceChart = new Chart(
+            document.getElementById('price-chart'),
+            {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'BTC/USDT',
+                        data: [],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.05)'
+                            },
+                            ticks: {
+                                color: '#94a3b8'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                color: '#94a3b8'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        );
+
+        // Format currency
+        function formatCurrency(value) {
+            return '$' + value.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // Format time
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+
+        // Render candle visualization
+        function renderCandle(candle) {
+            if (!candle) return '';
+            
+            const height = 120;
+            const range = candle.haHigh - candle.haLow;
+            const bodyHeight = Math.max(8, Math.abs(candle.haClose - candle.haOpen) / range * height);
+            const topWickHeight = (candle.haHigh - Math.max(candle.haOpen, candle.haClose)) / range * height;
+            const bottomWickHeight = (Math.min(candle.haOpen, candle.haClose) - candle.haLow) / range * height;
+            const bodyOffset = (Math.max(candle.haOpen, candle.haClose) - candle.haLow) / range * height;
+            const isBullish = candle.haClose > candle.haOpen;
+            
+            return `
+                <div class="candle-chart">
+                    <div class="candle-row">
+                        <div class="candle-body relative" style="height: ${height}px">
+                            <!-- Top wick -->
+                            <div class="candle-wick" style="height: ${topWickHeight}px; top: 0"></div>
+                            
+                            <!-- Body -->
+                            <div class="absolute w-full rounded-sm ${isBullish ? 'bg-green-500' : 'bg-red-500'}" 
+                                style="height: ${bodyHeight}px; top: ${height - bodyOffset - bodyHeight}px">
+                            </div>
+                            
+                            <!-- Bottom wick -->
+                            <div class="candle-wick" style="height: ${bottomWickHeight}px; bottom: 0"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Calculate Heikin-Ashi values
+        function calculateHeikinAshi(klines) {
+            const haData = [];
+            
+            for (let i = 0; i < klines.length; i++) {
+                const kline = klines[i];
+                const [time, open, high, low, close] = kline;
+                
+                let haOpen, haClose, haHigh, haLow;
+                
+                haClose = (parseFloat(open) + parseFloat(high) + parseFloat(low) + parseFloat(close)) / 4;
+                
+                if (i === 0) {
+                    haOpen = (parseFloat(open) + parseFloat(close)) / 2;
+                } else {
+                    haOpen = (haData[i - 1].haOpen + haData[i - 1].haClose) / 2;
+                }
+                
+                haHigh = Math.max(parseFloat(high), haOpen, haClose);
+                haLow = Math.min(parseFloat(low), haOpen, haClose);
+                
+                haData.push({
+                    timestamp: time,
+                    open: parseFloat(open),
+                    high: parseFloat(high),
+                    low: parseFloat(low),
+                    close: parseFloat(close),
+                    haOpen: parseFloat(haOpen.toFixed(2)),
+                    haHigh: parseFloat(haHigh.toFixed(2)),
+                    haLow: parseFloat(haLow.toFixed(2)),
+                    haClose: parseFloat(haClose.toFixed(2)),
+                    isBullish: haClose > haOpen,
+                    hasUpperShadow: haHigh > Math.max(haOpen, haClose),
+                    hasLowerShadow: haLow < Math.min(haOpen, haClose)
+                });
+            }
+            
+            return haData;
+        }
+
+        // Analyze signals
+        function analyzeSignals(haData) {
+            if (haData.length < 3) return {};
+            
+            const current = haData[haData.length - 1];
+            const previous = haData[haData.length - 2];
+            const beforePrevious = haData[haData.length - 3];
+            
+            const signals = {
+                trend: current.isBullish ? 'BULLISH' : 'BEARISH',
+                strength: 'NEUTRAL',
+                action: 'HOLD',
+                confidence: 50
+            };
+            
+            if (current.isBullish && !current.hasLowerShadow) {
+                signals.strength = 'STRONG';
+                signals.action = 'BUY';
+                signals.confidence = 85;
+            }
+            
+            if (!current.isBullish && !current.hasUpperShadow) {
+                signals.strength = 'STRONG';
+                signals.action = 'SELL';
+                signals.confidence = 85;
+            }
+            
+            if (current.isBullish !== previous.isBullish) {
+                if (current.isBullish) {
+                    signals.action = 'BUY';
+                    signals.strength = 'MEDIUM';
+                    signals.confidence = 70;
+                    signals.note = 'Bullish trend change detected';
+                } else {
+                    signals.action = 'SELL';
+                    signals.strength = 'MEDIUM';
+                    signals.confidence = 70;
+                    signals.note = 'Bearish trend change detected';
+                }
+            }
+            
+            if (current.isBullish === previous.isBullish && previous.isBullish === beforePrevious.isBullish) {
+                signals.strength = 'STRONG';
+                signals.confidence = 80;
+                signals.note = `Strong ${signals.trend.toLowerCase()} trend continuation`;
+            }
+            
+            return signals;
+        }
+
+        // Update UI with data
+        function updateUI(klines) {
+            const haData = calculateHeikinAshi(klines);
+            const signals = analyzeSignals(haData);
+            const currentPrice = parseFloat(klines[klines.length - 1][4]);
+            const prevPrice = parseFloat(klines[klines.length - 2][4]);
+            const priceChange = ((currentPrice - prevPrice) / prevPrice * 100).toFixed(2);
+            
+            // Update current price
+            elements.currentPrice.textContent = formatCurrency(currentPrice);
+            
+            // Update price change
+            if (priceChange > 0) {
+                elements.priceChange.innerHTML = `<i class="fas fa-caret-up mr-1"></i>${Math.abs(priceChange)}%`;
+                elements.priceChange.className = "ml-3 px-2 py-1 bg-green-500/20 text-green-400 rounded-md";
+            } else if (priceChange < 0) {
+                elements.priceChange.innerHTML = `<i class="fas fa-caret-down mr-1"></i>${Math.abs(priceChange)}%`;
+                elements.priceChange.className = "ml-3 px-2 py-1 bg-red-500/20 text-red-400 rounded-md";
+            } else {
+                elements.priceChange.className = "ml-3 px-2 py-1 bg-gray-500/20 text-gray-400 rounded-md hidden";
+            }
+            
+            // Update signal card
+            elements.signalCard.className = `rounded-xl p-6 mt-4 ${
+                signals.action === 'BUY' ? 'signal-buy' : 
+                signals.action === 'SELL' ? 'signal-sell' : 'signal-hold'
+            }`;
+            
+            elements.signalText.textContent = signals.action;
+            elements.signalDesc.textContent = signals.note || `${signals.strength} ${signals.trend} trend detected`;
+            elements.signalIcon.className = `fas ${
+                signals.action === 'BUY' ? 'fa-arrow-trend-up text-green-300' : 
+                signals.action === 'SELL' ? 'fa-arrow-trend-down text-red-300' : 'fa-pause-circle text-yellow-300'
+            } text-4xl`;
+            
+            elements.strengthValue.textContent = signals.strength;
+            elements.confidenceValue.textContent = `${signals.confidence}%`;
+            elements.confidenceDisplay.textContent = `${signals.confidence}%`;
+            elements.confidenceBar.style.width = `${signals.confidence}%`;
+            elements.trendValue.textContent = signals.trend;
+            
+            // Update candle visualization
+            const currentCandle = haData[haData.length - 1];
+            elements.candleVisualization.innerHTML = renderCandle(currentCandle);
+            elements.candleType.textContent = currentCandle.isBullish ? 'Bullish Candle' : 'Bearish Candle';
+            elements.candleType.className = `font-bold text-lg ${currentCandle.isBullish ? 'text-green-400' : 'text-red-400'}`;
+            elements.candleDesc.textContent = currentCandle.isBullish ? 
+                'Closing price higher than opening' : 'Closing price lower than opening';
+            
+            // Update table
+            let tableHTML = '';
+            const recentData = haData.slice(-5).reverse();
+            
+            recentData.forEach(candle => {
+                tableHTML += `
+                    <tr class="border-b border-slate-700 hover:bg-slate-800/50">
+                        <td class="py-4">${formatTime(candle.timestamp)}</td>
+                        <td class="py-4 text-right">${formatCurrency(candle.haOpen)}</td>
+                        <td class="py-4 text-right font-medium ${candle.isBullish ? 'text-green-400' : 'text-red-400'}">
+                            ${formatCurrency(candle.haClose)}
+                        </td>
+                        <td class="py-4 text-center">
+                            <div class="flex justify-center">
+                                <div class="candle-${candle.isBullish ? 'bullish' : 'bearish'} w-6 h-6 rounded-sm"></div>
+                            </div>
+                        </td>
+                        <td class="py-4 text-center">
+                            <span class="px-3 py-1 rounded-full ${
+                                candle.isBullish && !candle.hasLowerShadow ? 'bg-green-500/20 text-green-400' :
+                                !candle.isBullish && !candle.hasUpperShadow ? 'bg-red-500/20 text-red-400' : 'bg-slate-700'
+                            }">
+                                ${candle.isBullish && !candle.hasLowerShadow ? 'Buy' : 
+                                 !candle.isBullish && !candle.hasUpperShadow ? 'Sell' : 'Hold'}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            elements.haTableBody.innerHTML = tableHTML;
+            
+            // Update chart
+            const prices = klines.map(k => parseFloat(k[4]));
+            const labels = klines.map(k => formatTime(k[0]));
+            
+            priceChart.data.labels = labels;
+            priceChart.data.datasets[0].data = prices;
+            priceChart.update();
+            
+            // Update time
+            const now = new Date();
+            elements.updateTime.textContent = now.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        // Fetch market data from Binance
+        async function fetchMarketData() {
+            try {
+                // Use CORS proxy to avoid issues
+                const response = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=4h&limit=20')}`);
+                
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                
+                const klines = await response.json();
+                return klines;
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                return null;
+            }
+        }
+
+        // Initialize and update data
+        async function updateMarketData() {
+            const klines = await fetchMarketData();
+            if (klines) {
+                updateUI(klines);
+            }
+        }
+
+        // Event listeners
+        elements.refreshBtn.addEventListener('click', updateMarketData);
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            updateMarketData();
+            setInterval(updateMarketData, 60000); // Update every minute
+        });
+    </script>
+</body>
+</html>
